@@ -1,13 +1,37 @@
 /*******************************************************************************
 #   +html+<pre>
 #
-#   FILENAME: host_if.sv
-#   AUTHOR: Greg Taylor     CREATION DATE: 1 April 2024
+#   FILENAME: trick_sw_detection.sv
+#   AUTHOR: Greg Taylor     CREATION DATE: 12 April 2024
 #
 #   DESCRIPTION:
+#   OPL detection logic trick. Some games will simply use reads to introduce a 80us delay. The problem is
+#   these reads may finish before 80us in a fast system, and the timer overflow would not have occured yet,
+#   thus failing the detection. Count the reads after a write to set the st1 register and trigger an overflow
+#   if a certain number have occured. Counter in clk_host domain, signal to timer is synchronized to OPL3 clk.
+#
+#   The detection method I've seen is something like this:
+#
+#        opl3_write('h04, 'h60, 'b0); // mask timers 1 and 2
+#        opl3_write('h04, 'h80, 'b0); // rst_irq, unmask timers
+#        opl3_read(stat1);
+#        opl3_write('h02, 'hff, 'b0); // set timer 1 to max value
+#        opl3_write('h04, 'h21, 'b0); // mask timer 2, start timer 1
+#        for (int i = 0; i < 200; ++i) // this is has to wait at least 80us, but reads may finish sooner
+#            opl3_read(dummy);
+#        opl3_read(stat2);
+#        opl3_write('h04, 'h60, 'b0);
+#        opl3_write('h04, 'h80, 'b0);
+#        if ((stat1 & 'he0) == 0 && (stat2 & 'he0) == 'hc0)
+#            $display("OPL3 detected!");
+#        else
+#            $error("OPL3 not detected...");
+#
+#   Think Volkswagon cheating on the diesel emmisions test by detecting they're under test, except this is to
+#   accomplish good. This works for Doom OPL detection under ao486MiSTer.
 #
 #   CHANGE HISTORY:
-#   1 April 2024    Greg Taylor
+#   12 April 2024    Greg Taylor
 #       Initial version
 #
 #   Copyright (C) 2014 Greg Taylor <gtaylor@sonic.net>
@@ -42,38 +66,40 @@
 `default_nettype none
 /* altera message_off 10230 */
 
-module host_if
+module trick_sw_detection
     import opl2_pkg::*;
 (
-    input wire clk, // opl3 clk
-    input wire reset,
+    input wire clk,
     input wire clk_host,
-    input wire ic_n, // clk_host reset
+    input wire ic_n,
     input wire cs_n,
     input wire rd_n,
     input wire wr_n,
     input wire address,
     input wire [REG_FILE_DATA_WIDTH-1:0] din,
-    output logic [REG_FILE_DATA_WIDTH-1:0] dout,
-    output opl2_reg_wr_t opl2_reg_wr = 0,
-    input wire [REG_FILE_DATA_WIDTH-1:0] status,
     output logic force_timer_overflow
 );
+    localparam NUM_READS_TO_TRIGGER_OVERFLOW = 50;
+
     logic cs_p1_n = 1;
     logic wr_p1_n = 1;
-    logic [1:0] address_p1 = 0;
+    logic rd_p1_n = 1;
+    logic address_p1 = 0;
     logic [REG_FILE_DATA_WIDTH-1:0] din_p1 = 0;
-    logic opl3_fifo_empty;
-    logic [1:0] opl3_address;
-    logic [REG_FILE_DATA_WIDTH-1:0] opl3_data;
     logic wr_p1;
     logic wr_p2 = 0;
-    logic [REG_FILE_DATA_WIDTH-1:0] host_status;
+    logic [$clog2(NUM_READS_TO_TRIGGER_OVERFLOW)-1:0] host_rd_counter = 0;
+    opl2_reg_wr_t host_reg_wr;
+    logic rd_p1;
+    logic rd_p2 = 0;
+    logic host_force_timer_overflow = 0;
+    logic start_counter = 0;
+    logic [REG_TIMER_WIDTH-1:0] timer1 = 0;
 
-    // relax timing on clk_host
     always_ff @(posedge clk_host) begin
         cs_p1_n <= cs_n;
         wr_p1_n <= wr_n;
+        rd_p1_n <= rd_n;
         address_p1 <= address;
         din_p1 <= din;
         wr_p2 <= wr_p1;
@@ -81,57 +107,56 @@ module host_if
 
     always_comb wr_p1 = !cs_p1_n && !wr_p1_n;
 
-    afifo #(
-        .LGFIFO(6), // use at least 6 to get inferred into BRAM. Increase in ALMs at lower depths
-        .WIDTH(2 + REG_FILE_DATA_WIDTH) // address + data
-    ) afifo (
-		.i_wclk(clk_host),
-		.i_wr_reset_n(ic_n),
-		.i_wr(wr_p1 && !wr_p2),
-		.i_wr_data({address_p1, din_p1}),
-		.o_wr_full(),
-		.i_rclk(clk),
-		.i_rd_reset_n(!reset),
-		.i_rd(!opl3_fifo_empty),
-		.o_rd_data({opl3_address, opl3_data}),
-		.o_rd_empty(opl3_fifo_empty)
-	);
+    always_ff @(posedge clk_host) begin
+        host_reg_wr.valid <= 0;
 
-    always_ff @(posedge clk) begin
-        opl2_reg_wr.valid <= 0;
-
-        if (!opl3_fifo_empty)
-            if (!opl3_address[0]) // address write mode
-                opl2_reg_wr.address <= opl3_data;
-            else begin                  // data write mode
-                opl2_reg_wr.data <= opl3_data;
-                opl2_reg_wr.valid <= 1;
+        if (wr_p1 && !wr_p2)
+            if (!address_p1) begin // address write mode
+                host_reg_wr.address <= din_p1;
+            end
+            else begin             // data write mode
+                host_reg_wr.valid <= 1;
+                host_reg_wr.data <= din_p1;
             end
 
-        if (reset)
-            opl2_reg_wr <= 0;
+        if (host_reg_wr.valid && host_reg_wr.address == 'h2)
+            timer1 <= host_reg_wr.data;
+
+        if (!ic_n) begin
+            host_reg_wr <= 0;
+            timer1 <= 0;
+        end
     end
 
-    // bits do not need to be coherant, can use synchronizers
-    synchronizer #(
-        .DATA_WIDTH(REG_FILE_DATA_WIDTH)
-    ) dout_sync (
-        .clk(clk_host),
-        .in(status),
-        .out(host_status)
+    always_comb rd_p1 = !cs_p1_n && !rd_p1_n;
+
+    always_ff @(posedge clk_host) begin
+        rd_p2 <= rd_p1;
+
+        if (host_reg_wr.valid && host_reg_wr.address == 'h4 && host_reg_wr.data[0] && timer1 == 'hff) begin
+            start_counter <= 1;
+            host_rd_counter <= 0;
+            host_force_timer_overflow <= 0;
+        end
+
+        if (start_counter && rd_p1 && !rd_p2)
+            host_rd_counter <= host_rd_counter + 1;
+
+        if (host_rd_counter == NUM_READS_TO_TRIGGER_OVERFLOW)
+            host_force_timer_overflow <= 1; // signal is held for synchronizer
+
+        if (!ic_n || (host_reg_wr.valid && !(host_reg_wr.address == 'h4 && host_reg_wr.data[0]))) begin
+            start_counter <= 0;
+            host_rd_counter <= 0;
+            host_force_timer_overflow <= 0;
+        end
+    end
+
+    synchronizer force_timer_overflow_sync (
+        .clk,
+        .in(host_force_timer_overflow),
+        .out(force_timer_overflow)
     );
-
-    always_ff @(posedge clk_host)
-        dout <= host_status;
-
-    generate
-    if (INSTANTIATE_TIMERS)
-        trick_sw_detection trick_sw_detection (
-            .*
-        );
-    else
-        always_comb force_timer_overflow = 0;
-    endgenerate
 
 endmodule
 `default_nettype wire

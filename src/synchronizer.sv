@@ -27,7 +27,6 @@ module synchronizer #(
     input wire [DATA_WIDTH-1:0] in,
     output logic [DATA_WIDTH-1:0] out
 );
-    (* ASYNC_REG = "TRUE" *)
     logic [1:0] [DATA_WIDTH-1:0] sync_regs = 0;
 
     always_ff @(posedge clk)

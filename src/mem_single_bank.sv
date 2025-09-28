@@ -55,6 +55,7 @@ module mem_single_bank #(
     input wire [DATA_WIDTH-1:0] dia,
     output logic [DATA_WIDTH-1:0] dob
 );
+    generate
     if (OUTPUT_DELAY == 0)
         mem_simple_dual_port_async_read #(
             .DATA_WIDTH(DATA_WIDTH),
@@ -84,5 +85,6 @@ module mem_single_bank #(
             .dia,
             .dob
         );
+    endgenerate
 endmodule
 `default_nettype wire

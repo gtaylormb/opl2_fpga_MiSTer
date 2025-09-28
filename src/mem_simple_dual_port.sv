@@ -40,7 +40,6 @@
 #******************************************************************************/
 `timescale 1ns / 1ps
 `default_nettype none
-/* altera message_off 127005 */
 
 module mem_simple_dual_port #(
     parameter DATA_WIDTH = 0,

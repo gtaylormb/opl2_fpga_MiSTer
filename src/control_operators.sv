@@ -98,7 +98,6 @@ module control_operators
     logic cnt_p1;                         // operator connection
     logic [$clog2('h9)-1:0] kon_block_fnum_channel_mem_rd_address;
     logic [$clog2('h9)-1:0] fb_cnt_channel_mem_rd_address;
-    logic [$clog2('h9)-1:0] cnt1_channel_mem_rd_address;
 
     logic nts = 0; // keyboard split selection
     logic dvb = 0; // vibrato depth
@@ -209,8 +208,6 @@ module control_operators
     );
 
     always_comb begin
-        cnt1_channel_mem_rd_address = 0;
-
         unique case (op_num)
         0, 3: begin
             kon_block_fnum_channel_mem_rd_address = 0;
@@ -225,17 +222,14 @@ module control_operators
             fb_cnt_channel_mem_rd_address = 2;
         end
         6, 9: begin
-            cnt1_channel_mem_rd_address = 3;
             kon_block_fnum_channel_mem_rd_address = 3;
             fb_cnt_channel_mem_rd_address = 3;
         end
         7, 10: begin
-            cnt1_channel_mem_rd_address = 4;
             kon_block_fnum_channel_mem_rd_address = 4;
             fb_cnt_channel_mem_rd_address = 4;
         end
         8, 11: begin
-            cnt1_channel_mem_rd_address = 5;
             kon_block_fnum_channel_mem_rd_address = 5;
             fb_cnt_channel_mem_rd_address = 5;
         end

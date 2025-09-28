@@ -48,6 +48,7 @@ module timer
     parameter real TIMER_TICK_INTERVAL = 0 // time in seconds
 ) (
     input wire clk,
+    input wire reset,
     input wire [REG_TIMER_WIDTH-1:0] timer_reg,
     input wire start_timer,
     output logic timer_overflow_pulse = 0
@@ -75,7 +76,7 @@ module timer
 
     always_comb tick_pulse = tick_counter == TICK_TIMER_COUNT_VALUE - 1;
 
-    always_ff @(posedge clk)
+    always_ff @(posedge clk) begin
         if (start_timer) begin
             if (tick_pulse || start_timer_set_pulse)
                 tick_counter <= 0;
@@ -83,10 +84,14 @@ module timer
                 tick_counter <= tick_counter + 1;
         end
 
+        if (reset)
+            tick_counter <= 0;
+    end
+
     /*
      * Timer gets set to timer_reg upon overflow
      */
-    always_ff @(posedge clk)
+    always_ff @(posedge clk) begin
         if (start_timer_set_pulse)
             timer <= timer_reg;
         else if (tick_pulse) begin
@@ -95,6 +100,10 @@ module timer
             else
                 timer <= timer + 1;
         end
+
+        if (reset)
+            timer <= 0;
+    end
 
     always_ff @(posedge clk)
         timer_overflow_pulse <= (timer == 2**REG_TIMER_WIDTH - 1) && tick_pulse;

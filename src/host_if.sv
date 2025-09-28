@@ -60,10 +60,10 @@ module host_if
 );
     logic cs_p1_n = 1;
     logic wr_p1_n = 1;
-    logic [1:0] address_p1 = 0;
+    logic address_p1 = 0;
     logic [REG_FILE_DATA_WIDTH-1:0] din_p1 = 0;
     logic opl3_fifo_empty;
-    logic [1:0] opl3_address;
+    logic opl3_address;
     logic [REG_FILE_DATA_WIDTH-1:0] opl3_data;
     logic wr_p1;
     logic wr_p2 = 0;
@@ -82,7 +82,7 @@ module host_if
 
     afifo #(
         .LGFIFO(6), // use at least 6 to get inferred into BRAM. Increase in ALMs at lower depths
-        .WIDTH(2 + REG_FILE_DATA_WIDTH) // address + data
+        .WIDTH(1 + REG_FILE_DATA_WIDTH) // address + data
     ) afifo (
 		.i_wclk(clk_host),
 		.i_wr_reset_n(ic_n),
@@ -100,7 +100,7 @@ module host_if
         opl2_reg_wr.valid <= 0;
 
         if (!opl3_fifo_empty)
-            if (!opl3_address[0]) // address write mode
+            if (!opl3_address) // address write mode
                 opl2_reg_wr.address <= opl3_data;
             else begin                  // data write mode
                 opl2_reg_wr.data <= opl3_data;
@@ -124,7 +124,7 @@ module host_if
         dout <= host_status;
 
     generate
-    if (INSTANTIATE_TIMERS)
+    if (INSTANTIATE_TRICK_SW_DETECTION)
         trick_sw_detection trick_sw_detection (
             .*
         );

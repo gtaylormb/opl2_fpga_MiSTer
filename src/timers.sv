@@ -67,6 +67,8 @@ module timers
     logic irq_n_pre_synced;
 
     always_ff @(posedge clk) begin
+        irq_rst <= 0; // irq_rst gets pulsed, does not stay high
+
         if (opl2_reg_wr.valid) begin
             if (opl2_reg_wr.address == 2)
                 timer1 <= opl2_reg_wr.data;
@@ -86,7 +88,6 @@ module timers
         if (reset) begin
             timer1 <= 0;
             timer2 <= 0;
-            irq_rst <= 0;
             mt1 <= 0;
             mt2 <= 0;
             st2 <= 0;
@@ -98,6 +99,7 @@ module timers
         .TIMER_TICK_INTERVAL(TIMER1_TICK_INTERVAL)
     ) timer1_inst (
         .clk,
+        .reset,
         .timer_reg(timer1),
         .start_timer(st1),
         .timer_overflow_pulse(timer1_overflow_pulse)
@@ -107,6 +109,7 @@ module timers
         .TIMER_TICK_INTERVAL(TIMER2_TICK_INTERVAL)
     ) timer2_inst (
         .clk,
+        .reset,
         .timer_reg(timer2),
         .start_timer(st2),
         .timer_overflow_pulse(timer2_overflow_pulse)
