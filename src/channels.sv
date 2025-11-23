@@ -112,7 +112,13 @@ module channels
     );
 
     control_operators control_operators (
-        .*
+        .clk,
+        .reset,
+        .sample_clk_en,
+        .opl2_reg_wr,
+        .ryt,
+        .operator_out,
+        .ops_done_pulse
     );
 
     mem_single_bank #(
@@ -210,7 +216,12 @@ module channels
         end
 
     dac_prep dac_prep (
-        .*
+        .clk,
+        .clk_dac,
+        .channel_valid,
+        .channel,
+        .sample_valid,
+        .sample
     );
 
 endmodule
